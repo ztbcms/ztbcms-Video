@@ -10,8 +10,8 @@ namespace Video\Service;
 
 require_once dirname(__DIR__) . '/Lib/aliyun-php-sdk-core/Config.php';
 
-use Aliyun\Core\DefaultAcsClient;
-use Aliyun\Core\Profile\DefaultProfile;
+use DefaultProfile as DefaultProfile;
+use DefaultAcsClient as DefaultAcsClient;
 use vod\Request\V20170321 as vod;
 use Sts\Request\V20150401 as Sts;
 
@@ -22,12 +22,13 @@ class VideoService {
      *
      * @param $accessKeyId
      * @param $accessKeySecret
+     * @param $SecurityToken
      *
-     * @return \Aliyun\Core\DefaultAcsClient
+     * @return DefaultAcsClient
      */
-    static function init_vod_client($accessKeyId, $accessKeySecret) {
+    static function init_vod_client($accessKeyId, $accessKeySecret, $SecurityToken = null) {
         $regionId = 'cn-shanghai';  // 点播服务所在的Region，国内请填cn-shanghai，不要填写别的区域
-        $profile  = DefaultProfile::getProfile($regionId, $accessKeyId, $accessKeySecret);
+        $profile  = DefaultProfile::getProfile($regionId, $accessKeyId, $accessKeySecret, $SecurityToken);
         return new DefaultAcsClient($profile);
     }
 
@@ -80,14 +81,37 @@ class VideoService {
      * @return mixed
      */
     static function create_upload_video($client, $title, $fileName, $desc = '视频描述', $url = '', $tags = '', $dataType = 'JSON') {
-        $request = new vod\CreateUploadVideoRequest();
-        $request->setTitle($title);        // 视频标题(必填参数)
-        $request->setFileName($fileName); // 视频源文件名称，必须包含扩展名(必填参数)
-        $request->setDescription($desc);  // 视频源文件描述(可选)
-        $request->setCoverURL($url); // 自定义视频封面(可选)
-        $request->setTags($tags); // 视频标签，多个用逗号分隔(可选)
-        $request->setAcceptFormat($dataType);
-        return $client->getAcsResponse($request);
+        try {
+            $request = new vod\CreateUploadVideoRequest();
+            $request->setTitle($title);        // 视频标题(必填参数)
+            $request->setFileName($fileName); // 视频源文件名称，必须包含扩展名(必填参数)
+            $request->setDescription($desc);  // 视频源文件描述(可选)
+            $request->setCoverURL($url); // 自定义视频封面(可选)
+            $request->setTags($tags); // 视频标签，多个用逗号分隔(可选)
+            $request->setAcceptFormat($dataType);
+
+            /* 返回示例
+                {
+                 "RequestId": "25818875-5F78-4A13-BEF6-D7393642CA58",
+                 "VideoId": "93ab850b4f6f44eab54b6e91d24d81d4",
+                 "UploadAddress": "eyJTZWN1cml0eVRva2VuIjoiQ0FJU3p3TjF",
+                 "UploadAuth": "eyJFbmRwb2ludCI6Im"
+                }
+             */
+            $res = $client->getAcsResponse($request);
+            return createReturn(true, $res, '上传成功');
+        } catch (\Exception $e) {
+            switch ($e->getHttpStatus()) {
+                case '400':
+                    return createReturn(false, [], '文件不存在', '400');
+                case '403':
+                    return createReturn(false, [], '服务开通时账号初始化失败', '403');
+                case '404':
+                    return createReturn(false, [], '指定的模板组ID不存在', '404');
+                case '503':
+                    return createReturn(false, [], '创建视频信息失败，请稍后重试', '503');
+            }
+        }
     }
 
     /**
@@ -168,26 +192,50 @@ class VideoService {
      * 获取视频列表
      *
      * @param $client
+     * @param $page
+     * @param $limit
+     * @param $catid
      * @param $dataType
      *
      * @return mixed
      */
-    static function get_video_list($client, $dataType = 'JSON') {
-        $request = new vod\GetVideoListRequest();
-        // 示例：分别取一个月前、当前时间的UTC时间作为筛选视频列表的起止时间
-        $localTimeZone = date_default_timezone_get();
-        date_default_timezone_set('UTC');
-        $utcNow      = gmdate('Y-m-d\TH:i:s\Z');
-        $utcMonthAgo = gmdate('Y-m-d\TH:i:s\Z', time() - 30 * 86400);
-        date_default_timezone_set($localTimeZone);
-        $request->setStartTime($utcMonthAgo);   // 视频创建的起始时间，为UTC格式
-        $request->setEndTime($utcNow);          // 视频创建的结束时间，为UTC格式
-        #$request->setStatus('Uploading,Normal,Transcoding');  // 视频状态，默认获取所有状态的视频，多个用逗号分隔
-        #$request->setCateId(0);               // 按分类进行筛选
-        $request->setPageNo(1);
-        $request->setPageSize(20);
-        $request->setAcceptFormat($dataType);
-        return $client->getAcsResponse($request);
+    static function get_video_list($client, $page = 1, $limit = 20, $catid = 0, $dataType = 'JSON') {
+        try {
+            $request = new vod\GetVideoListRequest();
+            // 示例：分别取一个月前、当前时间的UTC时间作为筛选视频列表的起止时间
+            $localTimeZone = date_default_timezone_get();
+            date_default_timezone_set('UTC');
+            $utcNow      = gmdate('Y-m-d\TH:i:s\Z');
+            $utcMonthAgo = gmdate('Y-m-d\TH:i:s\Z', time() - 30 * 86400);
+            date_default_timezone_set($localTimeZone);
+            $request->setStartTime($utcMonthAgo);   // 视频创建的起始时间，为UTC格式
+            $request->setEndTime($utcNow);          // 视频创建的结束时间，为UTC格式
+            #$request->setStatus('Uploading,Normal,Transcoding');  // 视频状态，默认获取所有状态的视频，多个用逗号分隔
+//            if ($catid) $request->setCateId($catid);
+            $request->setPageNo($page);
+            $request->setPageSize($limit);
+            $request->setAcceptFormat($dataType);
+            $res  = $client->getAcsResponse($request);
+            $data = [
+                'page'        => $page,
+                'limit'       => $limit,
+                'lists'       => $res->{'VideoList'}
+                    ->{
+                    'Video'},
+                'total'       => $res->{'Total'},
+                'total_pages' => ceil($res->{'Total'} / $limit),
+            ];
+
+            return createReturn(true, $data);
+        } catch (\Exception $e) {
+            var_dump($e);
+            switch ($e->getHttpStatus()) {
+                case '404':
+                    return createReturn(false, [], '视频列表为空', '404');
+                case '400':
+                    return createReturn(false, [], '翻页总条数超过最大限制', '400');
+            }
+        }
     }
 
     /**
@@ -195,62 +243,5 @@ class VideoService {
      */
     static function getVideoFromOSS() {
 
-    }
-
-    /**
-     * @param        $AK
-     * @param        $SK
-     * @param        $roleArn
-     * @param        $clientName
-     * @param string $policy 附加策略
-     *
-     * @return \Aliyun\Core\Http\HttpResponse
-     */
-    static function getSTSAuth($AK, $SK, $roleArn, $clientName = '', $policy = '') {
-        $iClientProfile = DefaultProfile::getProfile("cn-hangzhou", $AK, $SK);
-        $client         = new DefaultAcsClient($iClientProfile);
-        $request        = new Sts\AssumeRoleRequest();
-        $request->setRoleSessionName($clientName);
-        $request->setRoleArn($roleArn);
-        $request->setDurationSeconds(3600);
-
-        if ($policy) {
-            $request->setPolicy($policy);
-        }
-
-        return $client->doAction($request);
-    }
-
-    /**
-     * 获取当前请求身份
-     *
-     * @param $AK
-     * @param $SK
-     * @param $dataType
-     *
-     * @return \Aliyun\Core\Http\HttpResponse
-     */
-    static function getCallerIdentity($AK, $SK, $dataType = 'JSON') {
-        $iClientProfile = DefaultProfile::getProfile("cn-hangzhou", $AK, $SK);
-        $client         = new DefaultAcsClient($iClientProfile);
-        $request        = new Sts\GetCallerIdentityRequest();
-        $request->setAcceptFormat($dataType);
-
-        /* 返回示例
-         {
-            "Credentials": {
-                "AccessKeyId": "STS.L4aBSCSJVMuKg5U1vFDw",
-                "AccessKeySecret": "wyLTSmsyPGP1ohvvw8xYgB29dlGI8KMiH2pKCNZ9",
-                "Expiration": "2015-04-09T11:52:19Z",
-                "SecurityToken": "CAESrAIIARKAAShQquMnLIlbvEcIxO6wCoqJufs8sWwieUxu45hS9AvKNEte8KRUWiJWJ6Y+YHAPgNwi7yfRecMFydL2uPOgBI7LDio0RkbYLmJfIxHM2nGBPdml7kYEOXmJp2aDhbvvwVYIyt/8iES/R6N208wQh0Pk2bu+/9dvalp6wOHF4gkFGhhTVFMuTDRhQlNDU0pWTXVLZzVVMXZGRHciBTQzMjc0KgVhbGljZTCpnJjwySk6BlJzYU1ENUJuCgExGmkKBUFsbG93Eh8KDEFjdGlvbkVxdWFscxIGQWN0aW9uGgcKBW9zczoqEj8KDlJlc291cmNlRXF1YWxzEghSZXNvdXJjZRojCiFhY3M6b3NzOio6NDMyNzQ6c2FtcGxlYm94L2FsaWNlLyo="
-            },
-            "AssumedRoleUser": {
-                "arn": "acs:sts::1234567890123456:assumed-role/AdminRole/alice",
-                "AssumedRoleUserId":"344584339364951186:alice"
-            },
-            "RequestId": "6894B13B-6D71-4EF5-88FA-F32781734A7F"
-            }
-         */
-        return $client->doAction($request);
     }
 }
