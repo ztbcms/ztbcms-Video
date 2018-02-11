@@ -31,9 +31,10 @@ class VideoController extends Controller {
      */
     function getVideoInfo() {
         try {
-            $client   = VideoService::getVodClient($this->AK, $this->SK);
-            $playInfo = VideoService::getVideoInfo($client, 'e5877edcc26f41f49626b151e1ad8a27');
-            var_dump($playInfo);
+            $videoId   = I('VideoId');
+            $client    = VideoService::getVodClient($this->AK, $this->SK);
+            $videoInfo = VideoService::getVideoInfo($client, $videoId);
+            $this->ajaxReturn($videoInfo);
         } catch (\Exception $e) {
             print $e->getMessage();
         }
@@ -44,9 +45,10 @@ class VideoController extends Controller {
      */
     function play() {
         try {
+            $videoId  = I('VideoId');
             $client   = VideoService::getVodClient($this->AK, $this->SK);
-            $playInfo = VideoService::getPlayInfo($client, 'bf72d4fbe3354bc6981ebe2ca4634214');
-            var_dump($playInfo);
+            $playInfo = VideoService::getPlayInfo($client, $videoId);
+            $this->ajaxReturn($playInfo);
         } catch (\Exception $e) {
             print $e->getMessage();
         }
@@ -57,9 +59,10 @@ class VideoController extends Controller {
      */
     function getPlayAuth() {
         try {
+            $videoId  = I('VideoId');
             $client   = VideoService::getVodClient($this->AK, $this->SK);
-            $playInfo = VideoService::getPlayAuth($client, 'bf72d4fbe3354bc6981ebe2ca4634214');
-            var_dump($playInfo);
+            $playInfo = VideoService::getPlayAuth($client, $videoId);
+            $this->ajaxReturn($playInfo);
         } catch (\Exception $e) {
             print $e->getMessage();
         }

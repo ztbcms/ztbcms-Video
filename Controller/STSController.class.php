@@ -36,7 +36,7 @@ class STSController extends Controller {
             $videoId  = I('VideoId');
             $client   = VideoService::getVodClient($this->AK, $this->SK);
             $playInfo = VideoService::getPlayAuth($client, $videoId);
-            var_dump($playInfo);
+            $this->ajaxReturn($playInfo);
         } catch (\Exception $e) {
             print $e->getMessage();
         }
@@ -50,7 +50,7 @@ class STSController extends Controller {
             $videoId  = I('VideoId');
             $client   = VideoService::getVodClient($this->AK, $this->SK);
             $playInfo = VideoService::getPlayInfo($client, $videoId);
-            var_dump($playInfo);
+            $this->ajaxReturn($playInfo);
         } catch (\Exception $e) {
             print $e->getMessage();
         }
@@ -74,7 +74,7 @@ class STSController extends Controller {
      */
     function getVideoInfo() {
         try {
-            $videoId  = I('VideoId');
+            $videoId = I('VideoId');
             $client   = VideoService::getVodClient($this->AK, $this->SK);
             $playInfo = VideoService::getVideoInfo($client, $videoId);
             var_dump($playInfo);
