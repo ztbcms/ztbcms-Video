@@ -17,6 +17,8 @@ use Sts\Request\V20150401 as Sts;
 class STSService {
 
     /**
+     * 获取角色授权
+     *
      * @param        $AK
      * @param        $SK
      * @param        $roleArn
@@ -93,19 +95,21 @@ class STSService {
     }
 
     /**
-     * STS 方式获取视频列表
+     * 获取client
      *
      * @param $AK
      * @param $SK
      * @param $AM
+     * @param $roleName
+     * @param $policy
+     * @param $expire
      *
-     * @return array|mixed
+     * @return array|\DefaultAcsClient
      */
-    static function getVideoList($AK, $SK, $AM) {
-        $profile = STSService::getSTSAuth($AK, $SK, $AM, 'videoReadOnly');
+    static function getClient($AK, $SK, $AM, $roleName = 'videoAdmin', $policy = [], $expire = 1800) {
 
-        $page  = I('page', 1);
-        $limit = I('limit', 20);
+        $profile = STSService::getSTSAuth($AK, $SK, $AM, $roleName, $policy, $expire);
+
         if ($profile->getStatus()) {
 
             $body = json_decode($profile->getBody(), 1);
@@ -114,11 +118,23 @@ class STSService {
             $STS_SK        = $body[ 'Credentials' ][ 'AccessKeySecret' ];
             $SecurityToken = $body[ 'Credentials' ][ 'SecurityToken' ];
 
-            $client = VideoService::init_vod_client($STS_AK, $STS_SK, $SecurityToken);
-            return VideoService::get_video_list($client, $page, $limit);
-
+            return VideoService::getVodClient($STS_AK, $STS_SK, $SecurityToken);
         } else {
             return createReturn(false, [], 'STS 授权失败!');
         }
+    }
+
+    /**
+     * STS 方式获取视频列表
+     *
+     * @param $client
+     * @param $page
+     * @param $limit
+     * @param $catid
+     *
+     * @return array|mixed
+     */
+    static function getVideoList($client, $page, $limit, $catid = 0) {
+        return VideoService::getVideoList($client, $page, $limit, $catid);
     }
 }

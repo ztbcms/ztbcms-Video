@@ -9,11 +9,13 @@
 namespace Video\Service;
 
 require_once dirname(__DIR__) . '/Lib/aliyun-php-sdk-core/Config.php';
+require_once dirname(dirname(__DIR__)) . '/Oss/Lib/AliyunOss/autoload.php';
 
 use DefaultProfile as DefaultProfile;
 use DefaultAcsClient as DefaultAcsClient;
+use OSS\Core\OssException;
+use OSS\OssClient;
 use vod\Request\V20170321 as vod;
-use Sts\Request\V20150401 as Sts;
 
 class VideoService {
 
@@ -26,7 +28,7 @@ class VideoService {
      *
      * @return DefaultAcsClient
      */
-    static function init_vod_client($accessKeyId, $accessKeySecret, $SecurityToken = null) {
+    static function getVodClient($accessKeyId, $accessKeySecret, $SecurityToken = null) {
         $regionId = 'cn-shanghai';  // 点播服务所在的Region，国内请填cn-shanghai，不要填写别的区域
         $profile  = DefaultProfile::getProfile($regionId, $accessKeyId, $accessKeySecret, $SecurityToken);
         return new DefaultAcsClient($profile);
@@ -42,7 +44,7 @@ class VideoService {
      *
      * @return mixed
      */
-    static function get_play_auth($client, $videoId, $expire = 1800, $dataType = 'JSON') {
+    static function getPlayAuth($client, $videoId, $expire = 1800, $dataType = 'JSON') {
         $request = new vod\GetVideoPlayAuthRequest();
         $request->setVideoId($videoId);
         $request->setAuthInfoTimeout($expire);
@@ -60,7 +62,7 @@ class VideoService {
      *
      * @return mixed
      */
-    static function get_play_info($client, $videoId, $dataType = 'JSON') {
+    static function getPlayInfo($client, $videoId, $dataType = 'JSON') {
         $request = new vod\GetPlayInfoRequest();
         $request->setVideoId($videoId);
         $request->setAcceptFormat($dataType);
@@ -68,7 +70,7 @@ class VideoService {
     }
 
     /**
-     * 上传视频
+     * 获取视频上传凭证
      *
      * @param        $client
      * @param        $title
@@ -80,7 +82,7 @@ class VideoService {
      *
      * @return mixed
      */
-    static function create_upload_video($client, $title, $fileName, $desc = '视频描述', $url = '', $tags = '', $dataType = 'JSON') {
+    static function createUploadVideo($client, $title, $fileName, $desc = '视频描述', $url = '', $tags = '', $dataType = 'JSON') {
         try {
             $request = new vod\CreateUploadVideoRequest();
             $request->setTitle($title);        // 视频标题(必填参数)
@@ -99,7 +101,7 @@ class VideoService {
                 }
              */
             $res = $client->getAcsResponse($request);
-            return createReturn(true, $res, '上传成功');
+            return createReturn(true, $res, '创建成功');
         } catch (\Exception $e) {
             switch ($e->getHttpStatus()) {
                 case '400':
@@ -114,6 +116,22 @@ class VideoService {
         }
     }
 
+    static function refreshUploadVideo($client, $videoId) {
+        $request = new vod\RefreshUploadVideoRequest();
+        $request->setVideoId($videoId);
+
+        /* 返回示例
+           {
+            "RequestId": "25818875-5F78-4A13-BEF6-D7393642CA58",
+            "VideoId": "93ab850b4f6f44eab54b6e91d24d81d4",
+            "UploadAddress": "eyJTZWN1cml0eVRva2VuIjoiQ0FJU3p3TjF",
+            "UploadAuth": "eyJFbmRwb2ludCI6Im"
+           }
+        */
+        $res = $client->getAcsResponse($request);
+        return createReturn(true, $res, '更新成功');
+    }
+
     /**
      * 获取视频信息
      *
@@ -123,7 +141,7 @@ class VideoService {
      *
      * @return mixed
      */
-    static function get_video_info($client, $videoId, $dataType = 'JSON') {
+    static function getVideoInfo($client, $videoId, $dataType = 'JSON') {
         $request = new vod\GetVideoInfoRequest();
         $request->setVideoId($videoId);
         $request->setAcceptFormat($dataType);
@@ -144,7 +162,7 @@ class VideoService {
      *
      * @return mixed
      */
-    static function update_video_info($client, $videoId, $title, $desc, $coverUrl, $tags = '', $catid = 0, $dataType = 'JSON') {
+    static function updateVideoInfo($client, $videoId, $title, $desc, $coverUrl, $tags = '', $catid = 0, $dataType = 'JSON') {
         $request = new vod\UpdateVideoInfoRequest();
         $request->setVideoId($videoId);
         $request->setTitle($title);   // 更改视频标题
@@ -165,7 +183,7 @@ class VideoService {
      *
      * @return mixed
      */
-    static function delete_videos($client, $videoIds, $dataType = 'JSON') {
+    static function deleteVideos($client, $videoIds, $dataType = 'JSON') {
         $request = new vod\DeleteVideoRequest();
         $request->setVideoIds($videoIds);   // 支持批量删除视频；videoIds为传入的视频ID列表，多个用逗号分隔
         $request->setAcceptFormat($dataType);
@@ -177,10 +195,12 @@ class VideoService {
      *
      * @param $client
      * @param $videoId
+     * @param $expire
+     * @param $dataType
      *
      * @return mixed
      */
-    static function get_mezzanine_info($client, $videoId, $expire = '1800', $dataType = 'JSON') {
+    static function getMezzanineInfo($client, $videoId, $expire = '1800', $dataType = 'JSON') {
         $request = new vod\GetMezzanineInfoRequest();
         $request->setVideoId($videoId);
         $request->setAuthTimeout($expire);   // 原片下载地址过期时间，单位：秒，默认为3600秒
@@ -199,7 +219,7 @@ class VideoService {
      *
      * @return mixed
      */
-    static function get_video_list($client, $page = 1, $limit = 20, $catid = 0, $dataType = 'JSON') {
+    static function getVideoList($client, $page = 1, $limit = 20, $catid = 0, $dataType = 'JSON') {
         try {
             $request = new vod\GetVideoListRequest();
             // 示例：分别取一个月前、当前时间的UTC时间作为筛选视频列表的起止时间
@@ -211,7 +231,7 @@ class VideoService {
             $request->setStartTime($utcMonthAgo);   // 视频创建的起始时间，为UTC格式
             $request->setEndTime($utcNow);          // 视频创建的结束时间，为UTC格式
             #$request->setStatus('Uploading,Normal,Transcoding');  // 视频状态，默认获取所有状态的视频，多个用逗号分隔
-//            if ($catid) $request->setCateId($catid);
+            if ($catid) $request->setCateId($catid);
             $request->setPageNo($page);
             $request->setPageSize($limit);
             $request->setAcceptFormat($dataType);
@@ -228,7 +248,6 @@ class VideoService {
 
             return createReturn(true, $data);
         } catch (\Exception $e) {
-            var_dump($e);
             switch ($e->getHttpStatus()) {
                 case '404':
                     return createReturn(false, [], '视频列表为空', '404');
@@ -239,9 +258,34 @@ class VideoService {
     }
 
     /**
-     * 从阿里云OSS获取视频资源
+     * 上传视频文件
+     *
+     * @param $uploadAddress string 视频上传授权地址
+     * @param $uploadAuth    string 视频上传授权令牌
+     * @param $file          string 本地文件
+     *
+     * @return array
      */
-    static function getVideoFromOSS() {
+    static function upload($uploadAddress, $uploadAuth, $file) {
+        $address  = json_decode(base64_decode($uploadAddress), true);
+        $bucket   = $address[ 'Bucket' ];
+        $endpoint = $address[ 'Endpoint' ];
+        $fileName = $address[ 'FileName' ];
 
+        $auth            = json_decode(base64_decode($uploadAuth), true);
+        $accessKeyId     = $auth[ 'AccessKeyId' ];
+        $accessKeySecret = $auth[ 'AccessKeySecret' ];
+        $expire          = $auth[ 'Expiration' ];
+        $securityToken   = $auth[ 'SecurityToken' ];
+
+        try {
+            $ossClient = new OssClient($accessKeyId, $accessKeySecret, $endpoint, false, $securityToken);
+            $ossClient->uploadFile($bucket, $fileName, $file);
+
+            return createReturn(true, [], '上传成功');
+
+        } catch (OssException $e) {
+            return createReturn(false, [], $e->getMessage());
+        }
     }
 }
